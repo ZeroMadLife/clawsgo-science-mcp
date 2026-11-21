@@ -109,3 +109,48 @@ def write_section(
         "notes": issues,
         "auto_labels": extra_labels,
     }
+
+
+def save_section(
+    paper_id: str,
+    section: str,
+    content: str,
+    format: str = "markdown",
+    *,
+    layout: Layout | None = None,
+) -> dict:
+    """Persist agent-authored section text without making another model call."""
+    layout = layout or get_layout()
+    v1 = validate.validate_inputs(section=section, format=format, prompt=content)
+    if not v1.ok:
+        return {
+            "ok": False,
+            "paper_id": paper_id,
+            "section": section,
+            "format": format,
+            "errors": v1.messages,
+        }
+
+    doc = DocStore(layout, paper_id)
+    v2 = validate.validate_structure(content, format=format)
+    labels = _collect_labels(doc)
+    v3 = validate.validate_references(labels, content, format=format)
+    doc.write_section(section, content, fmt=format)
+    v4 = validate.validate_doc(doc.list_sections())
+    return {
+        "ok": v2.ok and v3.ok,
+        "paper_id": paper_id,
+        "section": section,
+        "format": format,
+        "generator": "caller",
+        "doc_path": str(doc.doc_md),
+        "content": content,
+        "validations": {
+            "l1_inputs": v1.ok,
+            "l2_structure": v2.ok,
+            "l3_references": v3.ok,
+            "l4_doc": v4.ok,
+        },
+        "notes": v1.messages + v2.messages + v3.messages + v4.messages,
+        "auto_labels": [],
+    }

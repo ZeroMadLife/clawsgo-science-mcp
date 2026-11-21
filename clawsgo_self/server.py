@@ -64,6 +64,27 @@ def write_section(
     return _impl(paper_id=paper_id, section=section, prompt=prompt, format=format)
 
 
+
+@mcp.tool()
+def save_section(
+    paper_id: str,
+    section: str,
+    content: str,
+    format: str = "markdown",
+) -> dict:
+    """Validate and persist text authored by the connected agent, without a server-side model call.
+
+    Args:
+        paper_id: Paper or project identifier.
+        section: Section name, such as abstract, introduction, or results.
+        content: Complete section text already written by the agent.
+        format: Content format, `markdown` or `latex`.
+    """
+    from clawsgo_self.write.api import save_section as _impl
+
+    return _impl(paper_id=paper_id, section=section, content=content, format=format)
+
+
 @mcp.tool()
 def export_document(
     paper_id: str,

@@ -99,48 +99,40 @@ python -m clawsgo_self.server --help 2>&1 | Out-Null   # 能启动即安装成�
 python -m pytest tests/ -q                              # 跑内置测试，应全绿
 ```
 
-### 在 opencode / Claude Code 中配置
+### 在 OMP 中配置
 
-把 server 注册为本地 MCP（以 opencode 为例，`~/.config/opencode/opencode.json`）：
+把 server 注册为本地 stdio MCP；OMP 继续负责模型推理，server 提供科研工具：
 
-```jsonc
+```json
 {
-  "mcp": {
-    "clawsgo-self": {
-      "type": "local",
-      "command": ["python", "-m", "clawsgo_self.server"],
-      "cwd": "<你的工作区路径>",
-      "enabled": true,
-      "timeout": 120000,
-      "environment": {
-        "PYTHONPATH": "<你的工作区路径>"
-      }
+  "mcpServers": {
+    "clawsgo-science": {
+      "command": "<项目>/.venv/Scripts/python.exe",
+      "args": ["-m", "clawsgo_self"],
+      "cwd": "<项目>",
+      "env": {"PYTHONUTF8": "1"}
     }
   }
 }
 ```
 
-> 用**绝对路径**指向解释器与工作区，避免命中系统自带的 Python Store 占位符。
-> 建议显式加 `"timeout"`（毫秒），避免冷启动被误判为掉线而出现"需要手动 connect"。
+写作时，OMP 用当前对话模型起草正文，再调用 `save_section(paper_id, section, content, format)` 校验并保存。`write_section` 和研究类工具中的可选 LLM 是 server 侧增强，不会自动继承 OMP 的对话模型。除非显式提供 `--llm-base` / `--llm-model` 或 `CLAWSGO_SELF_LLM_*`，否则本 MCP 不配置模型端点，也不会发起模型请求。
+> 将示例中的路径换成项目绝对路径。添加 MCP 后重启 OMP，即可加载科研工具。
 
-重启客户端后即可看到全部 24 个工具。
+
 
 ---
 
 ## 真实使用示例
 
-### 1. 让 MCP 写一篇论文
+### 1. 用当前 Agent 模型撰写并导出
 
 ```text
 paper_id = "demo"
-write_section(paper_id, "abstract",   "为《边缘设备上的轻量推理》写摘要，主题=推理速度优化", "markdown")
-write_section(paper_id, "problem",    "问题定义：边缘设备推理延迟与能耗瓶颈", "markdown")
-write_section(paper_id, "modeling",   "建模：轻量化网络与量化方案", "markdown")
-write_section(paper_id, "solution",   "求解：剪枝/蒸馏/量化组合策略", "markdown")
-write_section(paper_id, "results",    "实验设置与评估指标", "markdown")
-write_section(paper_id, "references", "参考文献", "markdown")
-
-export_document(paper_id, "pdf")      # 产出 demo/doc.pdf + doc.tex + doc.html
+save_section(paper_id, "abstract", "由当前对话模型撰写的摘要正文……", "markdown")
+save_section(paper_id, "problem", "由当前对话模型撰写的问题定义……", "markdown")
+save_section(paper_id, "results", "根据已运行实验和真实结果撰写；不得编造数据。", "markdown")
+export_document(paper_id, "pdf")
 ```
 
 ### 2. 构思一个研究课题
@@ -162,20 +154,19 @@ inject_results("my_proj", tid)    # 把真实指标表 + 收敛图写进 my_proj
 get_deliverables(tid)             # 拿到复现的全部交付物
 ```
 
-### 4. 科研/论文全流程（无 key，agent 直接成文）
+### 4. 科研/论文全流程（OMP 使用当前对话模型）
 
 ```text
-ideate_paper(topic, paper_id)          # 选题与缺口
-research_plan(topic, paper_id)         # 研究计划书
-literature_review(topic, paper_id)     # 文献综述
-# 由 agent 依 WRITING_PROTOCOL 用 write_section 写满各章完整正文（无 LLM 配置）
-auto_title_abstract(paper_id)          # 提炼标题/摘要/关键词
-peer_review(paper_id)                  # 模拟审稿，据意见修订
-paper_polish(paper_id, "completeness") # 完整性检查
-paper_polish(paper_id, "grammar")      # 语言润色
-venue_suggest(topic, paper_id)         # 投稿建议
-export_document(paper_id, "pdf")       # 终版导出
+ideate_paper(topic, paper_id)          # 研究缺口与候选方向
+research_plan(topic, paper_id)         # 结构化研究计划书
+literature_review(topic, paper_id)     # 文献综述与候选引用（需核验来源）
+# OMP 用当前模型逐章起草，随后调用 save_section(paper_id, section, content)
+peer_review(paper_id)                  # 规则/可选服务端 LLM 辅助的审阅
+paper_polish(paper_id, "completeness")
+venue_suggest(topic, paper_id)
+export_document(paper_id, "pdf")
 ```
+
 
 > 快速起一个可写作的论文项目：`python scripts/agent_write_paper.py <paper_id> --topic "..."`。
 
@@ -233,17 +224,29 @@ clawsgo_self/
 └── tasks/{task_id}/            # 复现任务：parse/ code/ runs/ deliverables/
 ```
 
-### 可选增强：LLM
+### 可选服务端 LLM
 
-在 `.clawsgo-self/env` 写入 OpenAI 兼容端点即可启用 LLM 增强（更自然的章节生成/评审/构思）：
+服务端模型增强默认关闭。按需设置环境变量，或在启动时显式提供模型端点和模型名：
 
+```text
+CLAWSGO_SELF_LLM_BASE=https://.../v1
+CLAWSGO_SELF_LLM_KEY=optional
+CLAWSGO_SELF_LLM_MODEL=...
 ```
-BASE_URL=https://.../v1
-API_KEY=sk-...
-MODEL=...
+
+
+未配置服务端模型端点时，模型增强不可用，工具会回退到本地模板或规则。
+
+### 使用本机 Magpie（可选服务端模型）
+
+只有希望 MCP 服务器自行调用模型时才配置此模式。OMP 当前模型不会自动传入 MCP；下面的 `auto/gpt-6.2-sol` 是显式的服务端路由示例。
+
+```powershell
+.\.venv\Scripts\python.exe -m clawsgo_self --llm-base http://127.0.0.1:3425/v1 --llm-model auto/gpt-6.2-sol
 ```
 
-未配置时，所有线自动回退到**本地模板**，功能不受阻断。
+常规 OMP 接入不需要这两个参数：OMP 负责生成，`save_section` 负责校验和落盘。
+
 
 ---
 

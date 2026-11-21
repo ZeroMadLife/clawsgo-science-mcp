@@ -116,41 +116,39 @@ asyncio.run(main())
 ## 3. 端到端示例：对话式生成一篇论文
 
 ```text
-# 1) 构思选题（研究线）
+# 先用科研工具收集课题材料
 ideate_paper("大语言模型的可解释性", "explain_llm")
+research_plan("大语言模型的可解释性", "explain_llm")
+literature_review("大语言模型的可解释性", "explain_llm")
 
-# 2) 逐章撰写（写作线）
-write_section("explain_llm", "abstract",   "为《LLM 可解释性》写摘要", "markdown")
-write_section("explain_llm", "problem",    "问题定义：黑箱与大模型归因", "markdown")
-write_section("explain_llm", "modeling",   "建模：注意力归因与概念探测", "markdown")
-write_section("explain_llm", "solution",   "求解：集成探针与忠实度评估", "markdown")
-write_section("explain_llm", "results",    "实验设置与评估指标", "markdown")
-write_section("explain_llm", "references", "参考文献", "markdown")
+# OMP 使用当前对话模型起草章节，再调用 MCP 校验并保存
+save_section("explain_llm", "abstract", "已由当前模型撰写并核实的摘要正文。", "markdown")
+save_section("explain_llm", "problem", "已由当前模型撰写的问题定义。", "markdown")
 
-# 3) 导出成果（导出线）
-export_document("explain_llm", "pdf")   # 产物 projects/explain_llm/doc.pdf + doc.tex + doc.html
-
-# 4) 查看交付物（交付线）
+# 导出并检查交付物
+export_document("explain_llm", "pdf")
 get_deliverables(paper_id="explain_llm")
 ```
 
+`write_section` 是服务端自行生成的可选路径；这条 OMP 工作流使用 `save_section`，不固定服务端模型。
+
+
 ---
 
-## 4. 无 Key 成文（方案 A：agent 直接成文）——科研/论文推荐工作流
+## 4. 使用 OMP 当前模型撰写
 
-本复刻**不配置任何 LLM API key**，论文正文由 **agent（opencode 等）直接用当前对话模型
-写出完整章节**，再由本地工具导出。这与"对话中自然调用 write_section"等价，区别在于：
-每个章节都写成完整正文（不依赖 server 端模板占位），从而导出内容是真实论文而非骨架。
+OMP/Magpie 持有当前对话模型。先调用研究工具获取背景和计划，再让 agent 基于这些材料起草正文，并通过 `save_section(paper_id, section, content, format="markdown")` 校验、保存。MCP 不会自动访问 OMP 的对话模型；不配置 `CLAWSGO_SELF_LLM_*` 时，服务端 LLM 增强保持关闭。
 
-### 初始化脚手架（生成章节占位 + 成文协议）
+研究分析工具可以调用 OpenAlex 或使用本地规则。有些增强项仅在显式配置服务端 LLM 后启用。文献来源、实验结果和统计结论仍需核实。
+
+### 初始化可选论文脚手架
 
 ```bash
 # 在项目根，cwd 指向 clawsgo
 python scripts/agent_write_paper.py <paper_id> --topic "研究方向"
 ```
 
-脚本会创建 `projects/<paper_id>/sections/*.md` 空章节占位 + 重建 `doc.md`，
-并输出一份 10 章节的**成文清单**，同时写入 `WRITING_PROTOCOL.md` 记录无 key 契约。
+脚本在仓库的项目存储中创建章节占位并输出成文清单。若研究项目要放在其他工作目录，使用 MCP 时需配置对应 `cwd`；OMP 当前 JSON 配置将仓库根目录作为工作区。
 
 ### 科研/论文新增六工具（聚焦"全部科研、论文"）
 
@@ -163,8 +161,7 @@ python scripts/agent_write_paper.py <paper_id> --topic "研究方向"
 | `venue_suggest(topic, paper_id)` | 投稿/期刊匹配（内置映射库 + 可选 LLM） | `research/venue_suggest.{json,md}` |
 | `paper_polish(paper_id, mode)` | 润色/一致性/完整性检查（mode: completeness/consistency/grammar） | `research/polish_{mode}.{json,md}` |
 
-这些工具无 LLM 时**全部走确定性模板/映射/规则**，可独立产出有价值结果；配置了
-`CLAWSGO_SELF_LLM_*` 环境变量后会自动升级为模型增强。
+无服务端模型时，支持这些功能的工具使用确定性模板、映射或规则；明确配置 `CLAWSGO_SELF_LLM_*` 后，支持的功能才会调用服务端模型增强。
 
 ### 成果分析与交付六工具（科研进阶）
 

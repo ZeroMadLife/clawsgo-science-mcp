@@ -25,8 +25,8 @@ EXPECTED_TOOLS = {
     "ideate_paper",
     "inject_results",
     "research_verdict",
+    "save_section",
 }
-
 
 def _clean(text: str) -> str:
     return re.sub(r"\x1b\[[0-9;]*m", "", text)
@@ -210,3 +210,38 @@ def test_ideate_via_stdio():
     assert d.get("ideation", {}).get("candidates")
     assert d.get("plan_markdown")
     assert d.get("debate", {}).get("reviews")
+
+
+def test_save_agent_authored_section_via_stdio(tmp_path):
+    """Connected agent text is validated and persisted without server-side generation."""
+    import json
+
+    async def _run():
+        base = _new_params()
+        async with stdio_client(
+            StdioServerParameters(
+                command=base.command,
+                args=base.args,
+                cwd=str(tmp_path),
+                env=base.env,
+            )
+        ) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                res = await session.call_tool(
+                    "save_section",
+                    {
+                        "paper_id": "agent-authored",
+                        "section": "problem",
+                        "content": "We compare two prespecified retrieval strategies on the same fixed scientific question set, corpus snapshot, and frozen model. The primary outcome is answer accuracy, assessed against blinded reference answers. We also report citation support and retrieval recall. Each condition uses identical prompts, decoding settings, and compute budgets; no performance values are assumed before experiments.",
+                        "format": "markdown",
+                    },
+                )
+                return json.loads(_text_of(res.content))
+
+    result = asyncio.run(_run())
+    saved = tmp_path / ".clawsgo-self" / "projects" / "agent-authored" / "sections" / "problem.md"
+    assert result["ok"] is True
+    assert result["generator"] == "caller"
+    assert result["validations"]["l2_structure"] is True
+    assert saved.read_text(encoding="utf-8") == result["content"]
